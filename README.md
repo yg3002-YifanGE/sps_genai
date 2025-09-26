@@ -22,9 +22,12 @@ Student: *Yifan Ge (yg3002)*
 ### 1. Build the Docker image
 ```bash
 docker build -t sps-genai .
+```
 
 ### 2. Run the container
+```bash
 docker run --name sps-genai -p 8000:80 sps-genai
+```
 
 # The API will now be available at:
     ## Root endpoint: http://127.0.0.1:8000/
