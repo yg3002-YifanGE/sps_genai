@@ -1,36 +1,41 @@
-# Use a small official Python image as the base
-FROM python:3.12-slim-bookworm
+# Use official Python image as the base
+FROM python:3.10-slim-bookworm
 
-# Install curl and certificates (needed to download the uv installer)
+# Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl ca-certificates && \
+    curl ca-certificates build-essential && \
     rm -rf /var/lib/apt/lists/*
 
-# Download and install the latest uv (Python package manager/runner)
+# Download and install uv (Python package manager)
 ADD https://astral.sh/uv/install.sh /uv-installer.sh
 RUN sh /uv-installer.sh && rm /uv-installer.sh
-# Make sure uv is on PATH
 ENV PATH="/root/.local/bin/:${PATH}"
 
-# Set the working directory inside the container
+# Set the working directory
 WORKDIR /code
 
-# Copy dependency metadata first (for better layer caching)
-# If you also have a uv.lock, you can add another COPY line for it.
-COPY pyproject.toml /code/
+# Copy dependency files for layer caching
+COPY pyproject.toml uv.lock* /code/
 
 # Install dependencies with uv
-# (If you have a uv.lock and want reproducible installs, use: uv sync --frozen)
-RUN uv sync
+RUN uv sync --no-dev || uv sync
 
-# Install the spaCy model by wheel (no pip needed inside venv)
+# Install the spaCy model
 RUN uv pip install \
   https://github.com/explosion/spacy-models/releases/download/en_core_web_md-3.7.1/en_core_web_md-3.7.1-py3-none-any.whl
 
 # Copy the application source code
-# Make sure your project has: app/main.py, app/bigram_model.py, and app/__init__.py
 COPY ./app /code/app
+COPY ./helper_lib /code/helper_lib
 
-# Start the FastAPI app with Uvicorn on port 80 inside the container
-# We expose it to the host with -p 8000:80 when running `docker run`
-CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "80"]
+# Copy only model weights (not full dataset)
+RUN mkdir -p /code/data /code/assignment2
+COPY ./data/*.pth /code/data/
+COPY ./data/*.png /code/data/
+COPY ./assignment2/*.pt /code/assignment2/
+
+# Expose port 8000 (as required by assignment feedback)
+EXPOSE 8000
+
+# Start the FastAPI app with Uvicorn on port 8000
+CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

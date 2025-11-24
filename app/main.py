@@ -30,16 +30,17 @@ import torch.nn.functional as F
 from torchvision import transforms, utils as tv_utils
 from PIL import Image
 
-from helper_lib.model import get_model  # must include CNN_A2, VAE, GAN
+from helper_lib.model import get_model  # must include CNN_A2, VAE, GAN, EBM, Diffusion
 from helper_lib.generator import generate_gan_samples  # we will not call directly in API, but keep import for clarity
+from helper_lib.trainer import DiffusionModelWrapper, offset_cosine_diffusion_schedule, generate_ebm_samples
 
 # ---------------------------------
 # FastAPI app
 # ---------------------------------
 app = FastAPI(
     title="SPS GenAI API",
-    version="0.3.0",
-    description="Text bigram generation, embeddings, CIFAR10 classification, and GAN sampling."
+    version="0.4.0",
+    description="Text bigram generation, embeddings, CIFAR10 classification, GAN sampling, EBM generation, and Diffusion generation."
 )
 
 # ---------------------------------
@@ -86,6 +87,14 @@ class GANGenerateResponse(BaseModel):
     num_samples: int
     image_base64_png: str  # base64-encoded PNG of a grid of generated digits
 
+class EBMGenerateResponse(BaseModel):
+    num_samples: int
+    image_base64_png: str  # base64-encoded PNG of a grid of generated digits
+
+class DiffusionGenerateResponse(BaseModel):
+    num_samples: int
+    image_base64_png: str  # base64-encoded PNG of a grid of generated images
+
 
 # ---------------------------------
 # Basic sanity endpoint
@@ -94,7 +103,8 @@ class GANGenerateResponse(BaseModel):
 def read_root():
     return {"status": "ok",
             "message": "SPS GenAI API is running",
-            "endpoints": ["/generate", "/embed", "/similar", "/predict_cifar10", "/gan/generate"]}
+            "endpoints": ["/generate", "/embed", "/similar", "/predict_cifar10", 
+                         "/gan/generate", "/ebm/generate", "/diffusion/generate"]}
 
 
 # ---------------------------------
@@ -362,6 +372,250 @@ def gan_generate(num_samples: int = 16):
     b64_img = base64.b64encode(png_bytes).decode("ascii")
 
     return GANGenerateResponse(
+        num_samples=num_samples,
+        image_base64_png=b64_img
+    )
+
+
+# ---------------------------------
+# EBM sampling (Assignment 4)
+# ---------------------------------
+
+# Global state for EBM
+_ebm_model_cached = None
+
+
+def _ebm_weights_path() -> Path:
+    """Path to trained EBM weights for CIFAR-10"""
+    return Path(__file__).resolve().parent.parent / "data" / "ebm_cifar10.pth"
+
+
+def _load_ebm_model():
+    """Load (and cache) the trained EBM model for CIFAR-10"""
+    global _ebm_model_cached
+
+    if _ebm_model_cached is not None:
+        return _ebm_model_cached
+
+    # CIFAR-10 uses RGB (3 channels)
+    model = get_model("EBM", num_channels=3)
+    weights_path = _ebm_weights_path()
+    
+    if not weights_path.exists():
+        raise RuntimeError(
+            f"EBM weights not found at {weights_path}. "
+            "You must train the EBM on CIFAR-10 first: python train_ebm_cifar10.py"
+        )
+
+    state = torch.load(weights_path, map_location="cpu")
+    model.load_state_dict(state)
+    model.eval()
+    _ebm_model_cached = model
+    print(f"[lazy-load] EBM model (CIFAR-10) loaded from {weights_path}")
+    return _ebm_model_cached
+
+
+def _sample_ebm_grid_png(num_samples: int = 16, steps: int = 256, step_size: float = 10.0) -> bytes:
+    """
+    Generate samples from EBM using Langevin dynamics.
+    1. Load EBM model (CIFAR-10 RGB)
+    2. Start from random noise
+    3. Run gradient descent on input to find low-energy states
+    4. Make a grid image
+    5. Convert to PNG bytes
+    """
+    model = _load_ebm_model()
+    device = "cpu"  # use CPU for inference by default
+
+    with torch.no_grad():
+        # Start from random noise [-1, 1] for RGB images
+        x = torch.rand((num_samples, 3, 32, 32), device=device) * 2 - 1
+
+    # Run Langevin dynamics (gradient descent on input)
+    for _ in range(steps):
+        # Add noise
+        with torch.no_grad():
+            noise = torch.randn_like(x) * 0.01
+            x = (x + noise).clamp(-1.0, 1.0)
+
+        x.requires_grad_(True)
+
+        # Compute energy and gradients
+        energy = model(x)
+        grads, = torch.autograd.grad(energy, x, grad_outputs=torch.ones_like(energy))
+
+        # Gradient descent on input
+        with torch.no_grad():
+            grads = grads.clamp(-0.03, 0.03)
+            x = (x - step_size * grads).clamp(-1.0, 1.0)
+
+    samples = x.detach().cpu()
+    
+    # Rescale from [-1,1] to [0,1]
+    samples = (samples + 1.0) / 2.0
+    samples = samples.clamp(0.0, 1.0)
+
+    # Make grid
+    grid = tv_utils.make_grid(samples, nrow=int(np.ceil(np.sqrt(num_samples))), pad_value=1.0)
+    
+    # Convert to PIL (RGB image)
+    ndarr = (grid.mul(255).byte().permute(1, 2, 0).numpy())
+    pil_img = Image.fromarray(ndarr)
+
+    # Dump to PNG bytes
+    buf = io.BytesIO()
+    pil_img.save(buf, format="PNG")
+    buf.seek(0)
+    return buf.read()
+
+
+@app.get("/ebm/generate", response_model=EBMGenerateResponse)
+def ebm_generate(num_samples: int = 16, steps: int = 256, step_size: float = 10.0):
+    """
+    Assignment 4 endpoint for Energy-Based Model:
+    Returns a base64-encoded PNG of a grid of generated CIFAR-10-like images.
+    
+    Args:
+        num_samples: Number of samples to generate (default 16)
+        steps: Number of Langevin dynamics steps (default 256)
+        step_size: Step size for gradient descent (default 10.0)
+    
+    Steps:
+    - lazily load trained EBM weights from data/ebm_cifar10.pth
+    - run Langevin dynamics to sample low-energy states
+    - return as base64 PNG
+    """
+    if num_samples <= 0:
+        raise HTTPException(status_code=400, detail="num_samples must be > 0")
+
+    try:
+        png_bytes = _sample_ebm_grid_png(num_samples=num_samples, steps=steps, step_size=step_size)
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    # base64 encode for transport
+    b64_img = base64.b64encode(png_bytes).decode("ascii")
+
+    return EBMGenerateResponse(
+        num_samples=num_samples,
+        image_base64_png=b64_img
+    )
+
+
+# ---------------------------------
+# Diffusion sampling (Assignment 4)
+# ---------------------------------
+
+# Global state for Diffusion
+_diffusion_model_cached = None
+
+
+def _diffusion_weights_path() -> Path:
+    """Path to trained Diffusion model weights for CIFAR-10"""
+    return Path(__file__).resolve().parent.parent / "data" / "diffusion_cifar10.pth"
+
+
+def _load_diffusion_model():
+    """Load (and cache) the trained Diffusion model for CIFAR-10"""
+    global _diffusion_model_cached
+
+    if _diffusion_model_cached is not None:
+        return _diffusion_model_cached
+
+    # Create UNet model for CIFAR-10 (RGB, 3 channels)
+    unet = get_model("Diffusion", image_size=32, num_channels=3, embedding_dim=32)
+    
+    # Wrap in DiffusionModelWrapper
+    diffusion_wrapper = DiffusionModelWrapper(unet, offset_cosine_diffusion_schedule)
+    
+    weights_path = _diffusion_weights_path()
+    
+    if not weights_path.exists():
+        raise RuntimeError(
+            f"Diffusion weights not found at {weights_path}. "
+            "You must train the Diffusion model on CIFAR-10 first: python train_diffusion_cifar10.py"
+        )
+
+    checkpoint = torch.load(weights_path, map_location="cpu")
+    diffusion_wrapper.network.load_state_dict(checkpoint["model_state"])
+    
+    # Set normalizer if available
+    if "normalizer_mean" in checkpoint:
+        diffusion_wrapper.set_normalizer(checkpoint["normalizer_mean"], checkpoint["normalizer_std"])
+    
+    diffusion_wrapper.eval()
+    _diffusion_model_cached = diffusion_wrapper
+    print(f"[lazy-load] Diffusion model (CIFAR-10) loaded from {weights_path}")
+    return _diffusion_model_cached
+
+
+def _sample_diffusion_grid_png(num_samples: int = 16, diffusion_steps: int = 50, image_size: int = 32) -> bytes:
+    """
+    Generate samples from Diffusion model.
+    1. Load Diffusion model
+    2. Start from random noise
+    3. Run reverse diffusion process
+    4. Make a grid image
+    5. Convert to PNG bytes
+    """
+    model = _load_diffusion_model()
+
+    # Generate samples
+    with torch.no_grad():
+        samples = model.generate(
+            num_images=num_samples,
+            diffusion_steps=diffusion_steps,
+            image_size=image_size
+        ).cpu()
+
+    # Make grid
+    grid = tv_utils.make_grid(samples, nrow=int(np.ceil(np.sqrt(num_samples))), pad_value=1.0)
+    
+    # Convert to PIL (RGB image)
+    ndarr = (grid.mul(255).byte().permute(1, 2, 0).numpy())
+    pil_img = Image.fromarray(ndarr)
+
+    # Dump to PNG bytes
+    buf = io.BytesIO()
+    pil_img.save(buf, format="PNG")
+    buf.seek(0)
+    return buf.read()
+
+
+@app.get("/diffusion/generate", response_model=DiffusionGenerateResponse)
+def diffusion_generate(num_samples: int = 16, diffusion_steps: int = 50, image_size: int = 32):
+    """
+    Assignment 4 endpoint for Diffusion Model:
+    Returns a base64-encoded PNG of a grid of generated CIFAR-10-like images.
+    
+    Args:
+        num_samples: Number of samples to generate (default 16)
+        diffusion_steps: Number of reverse diffusion steps (default 50)
+        image_size: Size of generated images (default 32)
+    
+    Steps:
+    - lazily load trained Diffusion model weights from data/diffusion_cifar10.pth
+    - run reverse diffusion process
+    - return as base64 PNG
+    """
+    if num_samples <= 0:
+        raise HTTPException(status_code=400, detail="num_samples must be > 0")
+    if diffusion_steps <= 0:
+        raise HTTPException(status_code=400, detail="diffusion_steps must be > 0")
+
+    try:
+        png_bytes = _sample_diffusion_grid_png(
+            num_samples=num_samples, 
+            diffusion_steps=diffusion_steps,
+            image_size=image_size
+        )
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    # base64 encode for transport
+    b64_img = base64.b64encode(png_bytes).decode("ascii")
+
+    return DiffusionGenerateResponse(
         num_samples=num_samples,
         image_base64_png=b64_img
     )

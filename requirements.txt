@@ -1,0 +1,24 @@
+# SPS GenAI - Assignment 4 Dependencies
+# Python >= 3.10 required
+
+# Core ML Framework
+torch>=2.1.0
+torchvision>=0.16.0
+
+# Web API Framework
+fastapi[standard]>=0.116.1
+pydantic>=2.0.0
+uvicorn>=0.27.0
+
+# NLP
+spacy>=3.7.0
+
+# Data Science
+numpy>=1.24.0
+matplotlib>=3.7.0
+pillow>=10.0.0
+tqdm>=4.66.0
+
+# Install spaCy model after installing requirements:
+# python -m spacy download en_core_web_md
+
