@@ -1,0 +1,11 @@
+{
+  "base_model": "openai-community/gpt2",
+  "dataset": "rajpurkar/squad",
+  "num_epochs": 1,
+  "batch_size": 4,
+  "learning_rate": 5e-05,
+  "max_length": 512,
+  "num_samples": 5000,
+  "format": "That is a great question. [Q] [A] Let me know if you have any other questions.",
+  "final_loss": 0.15033557434082032
+}
