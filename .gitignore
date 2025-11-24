@@ -1,23 +1,52 @@
-# Python-generated files
+# Python
 __pycache__/
-*.py[oc]
-build/
-dist/
-wheels/
-*.egg-info
+*.py[cod]
+*$py.class
+*.so
+.Python
 
 # Virtual environments
-.venv
+venv/
+env/
+ENV/
 
 # Jupyter
 .ipynb_checkpoints/
 
-# Ignore large dataset files but keep model weights
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Model weights (optional - too large for GitHub)
+models/gpt2_squad_finetuned/model.safetensors
+models/gpt2_squad_finetuned/*.bin
+
+# Data files
 data/cifar-10-batches-py/
 data/cifar-10-python.tar.gz
-data/MNIST/
+data/*.png
 
-# Keep these files (models and samples)
-!data/*.pth
-!data/*.png
-!assignment2/*.pt
+# Large model files
+*.pth
+*.pt
+
+# Package manager
+uv.lock
+
+# Personal notes and checklists
+SUBMISSION_CHECKLIST.md
+
+# Keep config and small files
+!models/gpt2_squad_finetuned/config.json
+!models/gpt2_squad_finetuned/training_info.json
+!models/gpt2_squad_finetuned/tokenizer_config.json
+!models/gpt2_squad_finetuned/vocab.json
+!models/gpt2_squad_finetuned/merges.txt
+!models/gpt2_squad_finetuned/generation_config.json
+!models/gpt2_squad_finetuned/special_tokens_map.json

@@ -1,4 +1,4 @@
-# SPS GenAI - Assignments 1-4
+# SPS GenAI - Assignments 1-5
 
 **Columbia University – APANPS5900 Applied Generative AI**  
 **Author:** Yifan Ge (yg3002)  
@@ -8,7 +8,7 @@
 
 ## 📋 Project Overview
 
-This project implements multiple generative AI models and integrates them into a unified FastAPI web service. The project covers assignments 1-4 of the course, progressively building a comprehensive generative AI system.
+This project implements multiple generative AI models and integrates them into a unified FastAPI web service. The project covers assignments 1-5 of the course, progressively building a comprehensive generative AI system including fine-tuned large language models.
 
 ---
 
@@ -74,6 +74,30 @@ This project implements multiple generative AI models and integrates them into a
 - `/ebm/generate` - Generate images using EBM
 - `/diffusion/generate` - Generate images using Diffusion
 
+### Assignment 5: Fine-tuned GPT-2 for Question Answering
+- **Fine-tuned GPT-2** on SQuAD dataset (5,000 samples)
+- **Custom response format**: Prefix + Answer + Suffix
+- **API integration** with configurable generation parameters
+
+**Quick Start:**
+```bash
+# Train model
+cd assignment5
+python train_gpt2_squad.py --epochs 1 --num_samples 5000 --batch_size 4
+
+# Test model
+python train_gpt2_squad.py --test_only
+
+# Test API
+python test_gpt2_api.py
+```
+
+**Key Endpoints:**
+- `/gpt2/answer` - Single answer generation
+- `/gpt2/answer/multiple` - Multiple diverse answers
+
+📁 **See `assignment5/README.md` for complete documentation**
+
 ---
 
 ## 🏗️ Project Structure
@@ -82,31 +106,43 @@ This project implements multiple generative AI models and integrates them into a
 sps_genai/
 ├── app/
 │   ├── main.py              # FastAPI application with all endpoints
-│   └── bigram_model.py      # Text generation model
+│   ├── bigram_model.py      # Text generation model
+│   └── gpt2_qa.py           # Fine-tuned GPT-2 integration (Assignment 5)
 │
-├── helper_lib/
-│   ├── model.py             # All models: CNN_A2, VAE, GAN, EBM, UNet
-│   ├── trainer.py           # Training functions for all models
+├── helper_lib/              # Reusable ML components
+│   ├── model.py             # CNN, VAE, GAN, EBM, Diffusion models
+│   ├── trainer.py           # Training functions
 │   ├── generator.py         # Sample generation utilities
 │   ├── data_loader.py       # Dataset loaders
 │   └── utils.py
 │
-├── data/
-│   ├── cifar-10-batches-py/ # CIFAR-10 dataset
-│   ├── gan_G.pth            # GAN generator weights
-│   ├── ebm_cifar10.pth      # EBM model weights
-│   └── diffusion_cifar10.pth # Diffusion model weights
+├── assignment2/             # CNN Image Classification
+│   └── cnn_a2_cifar10.pt
 │
-├── assignment2/
-│   └── cnn_a2_cifar10.pt    # CNN classifier weights
+├── assignment4/             # EBM & Diffusion Models
+│   ├── README.md
+│   ├── train_ebm_cifar10.py
+│   ├── train_diffusion_cifar10.py
+│   └── train_gan_offline.py
 │
-├── train_ebm_cifar10.py     # EBM training script
-├── train_diffusion_cifar10.py # Diffusion training script
-├── train_gan_offline.py     # GAN training script
-├── test_api.py              # API testing script
-├── Dockerfile               # Docker configuration
-├── pyproject.toml           # Dependencies (uv package manager)
-└── requirements.txt         # pip dependencies
+├── assignment5/             # Fine-tuned GPT-2 Q&A
+│   ├── README.md            # Complete documentation
+│   ├── train_gpt2_squad.py  # Training script
+│   └── test_gpt2_api.py     # API testing
+│
+├── data/                    # Trained model weights
+│   ├── cifar-10-batches-py/
+│   ├── gan_G.pth
+│   ├── ebm_cifar10.pth
+│   └── diffusion_cifar10.pth
+│
+├── models/
+│   └── gpt2_squad_finetuned/ # Fine-tuned GPT-2 (created by training)
+│
+├── test_api.py              # General API testing
+├── Dockerfile
+├── requirements.txt
+└── README.md                # This file
 ```
 
 ---
@@ -130,14 +166,17 @@ python -m spacy download en_core_web_md
 ### 2. Train Models (if needed)
 
 ```bash
-# Train GAN (Assignment 3)
+# Assignment 3: GAN
+cd assignment4
 python train_gan_offline.py
 
-# Train EBM (Assignment 4)
+# Assignment 4: EBM & Diffusion
 python train_ebm_cifar10.py
-
-# Train Diffusion (Assignment 4)
 python train_diffusion_cifar10.py
+
+# Assignment 5: Fine-tune GPT-2
+cd ../assignment5
+python train_gpt2_squad.py --epochs 1 --num_samples 5000 --batch_size 4
 ```
 
 ### 3. Run API Server
@@ -151,7 +190,12 @@ Access interactive documentation: **http://localhost:8000/docs**
 ### 4. Test API
 
 ```bash
+# Test general endpoints
 python test_api.py
+
+# Test GPT-2 endpoints (Assignment 5)
+cd assignment5
+python test_gpt2_api.py
 ```
 
 ---
@@ -168,6 +212,8 @@ python test_api.py
 | `/gan/generate` | GET | Generate MNIST digits | 3 |
 | `/ebm/generate` | GET | Generate CIFAR-10 images (EBM) | 4 |
 | `/diffusion/generate` | GET | Generate CIFAR-10 images (Diffusion) | 4 |
+| `/gpt2/answer` | POST | Answer question with fine-tuned GPT-2 | 5 |
+| `/gpt2/answer/multiple` | POST | Generate multiple diverse answers | 5 |
 
 ### Example Usage
 
@@ -186,6 +232,27 @@ curl "http://localhost:8000/ebm/generate?num_samples=16&steps=256"
 **Diffusion Generation:**
 ```bash
 curl "http://localhost:8000/diffusion/generate?num_samples=16&diffusion_steps=50"
+```
+
+**GPT-2 Question Answering (Assignment 5):**
+```bash
+# Single answer
+curl -X POST "http://localhost:8000/gpt2/answer" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "question": "What is machine learning?",
+    "max_length": 150,
+    "temperature": 0.7
+  }'
+
+# Multiple diverse answers
+curl -X POST "http://localhost:8000/gpt2/answer/multiple" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "question": "What is artificial intelligence?",
+    "num_responses": 3,
+    "temperature": 0.8
+  }'
 ```
 
 ---
@@ -255,6 +322,13 @@ loss = criterion(pred_noises, noises)  # Compare predicted vs true noise
 - Training: L1 loss on noise prediction, 5 epochs
 - Sampling: Reverse diffusion (50 steps)
 
+### Fine-tuned GPT-2 (Assignment 5)
+- Architecture: GPT-2 (124M parameters, 12 layers, 768 hidden size)
+- Dataset: SQuAD (Stanford Question Answering Dataset)
+- Training: Causal language modeling, 3 epochs
+- Format: Custom prefix/suffix for structured responses
+- Generation: Autoregressive with temperature sampling
+
 ---
 
 ## ⚙️ Dependencies
@@ -265,6 +339,9 @@ loss = criterion(pred_noises, noises)  # Compare predicted vs true noise
 - fastapi[standard] >= 0.116.1
 - pydantic >= 2.0.0
 - spacy >= 3.7.0
+- transformers >= 4.35.0 (Assignment 5)
+- datasets >= 2.14.0 (Assignment 5)
+- accelerate >= 0.24.0 (Assignment 5)
 - numpy >= 1.24.0
 - pillow >= 10.0.0
 - matplotlib >= 3.7.0
@@ -292,6 +369,57 @@ loss = criterion(pred_noises, noises)  # Compare predicted vs true noise
 - Learning rate: 2e-4
 - Optimizer: Adam (β1=0.5, β2=0.999)
 - Time: ~15 minutes (CPU)
+
+### GPT-2 Fine-tuning (Assignment 5)
+- Base model: openai-community/gpt2 (124M params)
+- **Dataset: SQuAD (5,000 samples from 87k total)** ⭐
+- Epochs: 1
+- Learning rate: 5e-5
+- Batch size: 4
+- Max sequence length: 512 tokens
+- Time: ~4-5 hours (CPU)
+- Format: Custom prefix/suffix wrapping
+
+**Dataset Size Rationale:**
+We use 5,000 samples (instead of the full 87k) because:
+1. **Task-appropriate**: This is fine-tuning for format learning, not training from scratch
+2. **Computationally efficient**: Full dataset would take 80+ hours on CPU
+3. **Sufficient for format**: 5,000 examples adequately teach the response template
+4. **Assignment-compliant**: Meets all requirements while being practical
+
+**Training Command:**
+```bash
+# Recommended configuration (used for this submission)
+python train_gpt2_squad_simple.py --epochs 1 --num_samples 5000 --batch_size 4
+
+# Alternative: Quick test (1,000 samples, ~50 minutes)
+python train_gpt2_squad_simple.py --epochs 1 --num_samples 1000 --batch_size 4
+
+# Alternative: Full dataset (not recommended - 80+ hours)
+python train_gpt2_squad_simple.py --epochs 1 --batch_size 4
+
+# Test existing model
+python train_gpt2_squad_simple.py --test_only
+```
+
+---
+
+## ✅ Assignment 5: Fine-tuned LLM Features
+
+**What's New in Assignment 5:**
+- ✅ Fine-tuned GPT-2 model on SQuAD dataset
+- ✅ Custom response format with prefix/suffix
+- ✅ Question answering API endpoints
+- ✅ Multiple response generation
+- ✅ Configurable generation parameters (temperature, max_length, top_p)
+- ✅ Lazy model loading for efficient API startup
+- ✅ Comprehensive testing script
+- ✅ Full documentation and examples
+
+**Custom Response Format:**
+```
+That is a great question. [Question] [Answer] Let me know if you have any other questions.
+```
 
 ---
 
@@ -324,9 +452,11 @@ This will:
 ## 📚 References
 
 - Course: APANPS5900 Applied Generative AI
-- Modules: 1-8 (Text Generation to Diffusion Models)
+- Modules: 1-11 (Text Generation to Reinforcement Learning)
 - PyTorch Documentation
 - FastAPI Documentation
+- HuggingFace Transformers Documentation
+- SQuAD Dataset: https://huggingface.co/datasets/rajpurkar/squad
 
 ---
 
@@ -336,4 +466,42 @@ This project is for educational purposes as part of Columbia University coursewo
 
 ---
 
-**Status:** ✅ All assignments (1-4) complete and deployed
+**Status:** ✅ All assignments (1-5) complete and deployed
+
+---
+
+## 🎓 Assignment 5 Specific Notes
+
+### Fine-tuning Process
+1. **Data Preparation**: SQuAD dataset is automatically downloaded from HuggingFace
+2. **Format Transformation**: Q&A pairs are wrapped with custom prefix/suffix
+3. **Tokenization**: GPT-2 tokenizer with padding and truncation
+4. **Training**: Causal language modeling with teacher forcing
+5. **Saving**: Model and tokenizer saved to `models/gpt2_squad_finetuned/`
+
+### API Integration
+- **Lazy Loading**: Model loads only when first API call is made
+- **Device Detection**: Automatically uses GPU if available
+- **Error Handling**: Comprehensive error messages for missing models
+- **Validation**: Parameter validation for generation settings
+
+### Testing
+```bash
+# Run comprehensive tests
+python test_gpt2_api.py
+```
+
+Tests include:
+- API health check
+- Single answer generation with multiple questions
+- Multiple answer generation
+- Parameter validation
+- Sample output generation for documentation
+
+### Performance Tips
+- **GPU**: Use CUDA-enabled GPU for faster inference (3-5x speedup)
+- **Batch Size**: Adjust based on available memory
+- **Temperature**: Lower (0.5-0.7) for focused answers, higher (0.8-1.0) for creativity
+- **Max Length**: Balance between completeness and inference time
+
+---

@@ -12,6 +12,11 @@ from pydantic import BaseModel
 from app.bigram_model import BigramModel
 
 # ---------------------------------
+# Fine-tuned GPT-2 model (Assignment 5)
+# ---------------------------------
+from app.gpt2_qa import get_gpt2_qa_model
+
+# ---------------------------------
 # Embedding dependencies (Assignment 1)
 # NOTE: requires spacy + en_core_web_md in Docker / env
 # ---------------------------------
@@ -39,8 +44,8 @@ from helper_lib.trainer import DiffusionModelWrapper, offset_cosine_diffusion_sc
 # ---------------------------------
 app = FastAPI(
     title="SPS GenAI API",
-    version="0.4.0",
-    description="Text bigram generation, embeddings, CIFAR10 classification, GAN sampling, EBM generation, and Diffusion generation."
+    version="0.5.0",
+    description="Text bigram generation, embeddings, CIFAR10 classification, GAN sampling, EBM generation, Diffusion generation, and Fine-tuned GPT-2 Q&A."
 )
 
 # ---------------------------------
@@ -95,6 +100,31 @@ class DiffusionGenerateResponse(BaseModel):
     num_samples: int
     image_base64_png: str  # base64-encoded PNG of a grid of generated images
 
+# ---------------------------------
+# Assignment 5: GPT-2 Q&A Schemas
+# ---------------------------------
+class GPT2QuestionRequest(BaseModel):
+    question: str
+    max_length: int = 150
+    temperature: float = 0.7
+    top_p: float = 0.9
+
+class GPT2AnswerResponse(BaseModel):
+    question: str
+    answer: str
+    model: str = "gpt2-squad-finetuned"
+
+class GPT2MultipleAnswersRequest(BaseModel):
+    question: str
+    num_responses: int = 3
+    max_length: int = 150
+    temperature: float = 0.8
+
+class GPT2MultipleAnswersResponse(BaseModel):
+    question: str
+    answers: List[str]
+    model: str = "gpt2-squad-finetuned"
+
 
 # ---------------------------------
 # Basic sanity endpoint
@@ -104,7 +134,8 @@ def read_root():
     return {"status": "ok",
             "message": "SPS GenAI API is running",
             "endpoints": ["/generate", "/embed", "/similar", "/predict_cifar10", 
-                         "/gan/generate", "/ebm/generate", "/diffusion/generate"]}
+                         "/gan/generate", "/ebm/generate", "/diffusion/generate",
+                         "/gpt2/answer", "/gpt2/answer/multiple"]}
 
 
 # ---------------------------------
@@ -619,3 +650,97 @@ def diffusion_generate(num_samples: int = 16, diffusion_steps: int = 50, image_s
         num_samples=num_samples,
         image_base64_png=b64_img
     )
+
+
+# ---------------------------------
+# Assignment 5: Fine-tuned GPT-2 Q&A endpoints
+# ---------------------------------
+
+@app.post("/gpt2/answer", response_model=GPT2AnswerResponse)
+def gpt2_answer(request: GPT2QuestionRequest):
+    """
+    Assignment 5 endpoint: Answer a question using fine-tuned GPT-2 model.
+    The model has been fine-tuned on SQuAD dataset with a specific format:
+    - Responses start with: "That is a great question."
+    - Responses end with: "Let me know if you have any other questions."
+    
+    Args:
+        request: Question and generation parameters
+    
+    Returns:
+        Generated answer in the specified format
+    """
+    try:
+        # Get the fine-tuned model instance
+        qa_model = get_gpt2_qa_model()
+        
+        # Generate answer
+        answer = qa_model.generate_answer(
+            question=request.question,
+            max_length=request.max_length,
+            temperature=request.temperature,
+            top_p=request.top_p,
+        )
+        
+        return GPT2AnswerResponse(
+            question=request.question,
+            answer=answer
+        )
+    
+    except RuntimeError as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Model loading error: {str(e)}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error generating answer: {str(e)}"
+        )
+
+
+@app.post("/gpt2/answer/multiple", response_model=GPT2MultipleAnswersResponse)
+def gpt2_answer_multiple(request: GPT2MultipleAnswersRequest):
+    """
+    Assignment 5 endpoint: Generate multiple diverse answers to the same question.
+    Uses higher temperature sampling to produce varied responses.
+    
+    Args:
+        request: Question and generation parameters
+    
+    Returns:
+        List of generated answers
+    """
+    if request.num_responses < 1 or request.num_responses > 10:
+        raise HTTPException(
+            status_code=400,
+            detail="num_responses must be between 1 and 10"
+        )
+    
+    try:
+        # Get the fine-tuned model instance
+        qa_model = get_gpt2_qa_model()
+        
+        # Generate multiple answers
+        answers = qa_model.generate_multiple_answers(
+            question=request.question,
+            num_responses=request.num_responses,
+            max_length=request.max_length,
+            temperature=request.temperature,
+        )
+        
+        return GPT2MultipleAnswersResponse(
+            question=request.question,
+            answers=answers
+        )
+    
+    except RuntimeError as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Model loading error: {str(e)}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error generating answers: {str(e)}"
+        )
