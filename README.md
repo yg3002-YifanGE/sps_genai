@@ -266,10 +266,18 @@ docker build -t sps-genai:latest .
 
 ### Run Container
 ```bash
-docker run -p 8000:8000 sps-genai:latest
+docker run -d -p 8000:8000 --name sps-genai sps-genai:latest
+```
+
+### Train GPT-2 Model in Container (Assignment 5)
+```bash
+# Quick test (1,000 samples, ~50 minutes)
+docker exec -it sps-genai python assignment5/train_gpt2_squad.py --epochs 1 --num_samples 1000 --batch_size 4
 ```
 
 Access at: **http://localhost:8000/docs**
+
+📖 **See `DOCKER_GUIDE.md` for complete Docker deployment guide**
 
 ---
 
